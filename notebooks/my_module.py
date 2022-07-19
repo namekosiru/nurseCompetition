@@ -11,6 +11,27 @@ def read_data(number: int) -> pd.DataFrame:
     df_care = pd.read_csv(f"../data/Care Record Data/train{number}.csv")
     return df_acc, df_care
 
+def read_all_data():
+    df_acc = pd.DataFrame()
+    df_care_train = pd.DataFrame()
+    df_care_test = pd.DataFrame()
+
+    #加速度データ
+    for path in glob("../data/Accelerometer Data/*"):
+        tmp = pd.read_csv(path)
+        df_acc = pd.concat([df_acc, tmp])
+
+    #訓練ラベルデータ
+    for path in glob("../data/Care Record Data/*"):
+        tmp = pd.read_csv(path)
+        df_care_train = pd.concat([df_care_train, tmp])
+
+    #検証ラベルデータ
+    for path in glob("../TestData/**/*"):
+        tmp = pd.read_csv(path)
+        df_care_test = pd.concat([df_care_test, tmp])
+    return df_acc, df_care_train, df_care_test
+
 def convert_datetime(df: pd.DataFrame, columns: list) -> pd.DataFrame:
     """
         任意のカラムをデータタイム型に変換
@@ -29,16 +50,6 @@ def add_timeLength_timeLengthSeconds(df: pd.DataFrame) -> pd.DataFrame:
     df["time_length_seconds"] = df["time_length"].map(lambda x: x.total_seconds())
     return df
 
-def read_all_data():
-    df_acc = pd.DataFrame()
-    df_care = pd.DataFrame()
-    for path in glob("../data/Accelerometer Data/*"):
-        tmp = pd.read_csv(path)
-        df_acc = pd.concat([df_acc, tmp])
-    for path in glob("../data/Care Record Data/*"):
-        tmp = pd.read_csv(path)
-        df_care = pd.concat([df_care, tmp])
-    return df_acc, df_care
 
 def create_acc_dataframe_label(df_care: pd.DataFrame, df_acc: pd.DataFrame) -> dict:
     """
@@ -127,3 +138,30 @@ def create_users_filters():
         user_filter.sort_index(inplace=True)
         users_filters[user_id] = user_filter
     return users_filters
+
+def create_y_label(df_care: pd.DataFrame):
+    """
+        各activity_labelをバイナリで作成する。(正解ラベル)
+    """
+    feat = df_care.groupby(["activity_type_id", "year-month-date-hour"]).count().\
+                    reset_index()[['activity_type_id', 'year-month-date-hour','id']].\
+                    rename(columns={"id": "counts"})
+    # 頻度を出現のバイナリに変換
+    feat["counts"] = feat["counts"].mask(feat.counts > 0, 1)
+    df_care_date = df_care.copy()
+
+    activity_type_ids = sorted(list(df_care['activity_type_id'].unique()))
+    for activity_id in activity_type_ids:
+        df_care_date = pd.merge(df_care_date, feat[feat['activity_type_id'] == activity_id][['year-month-date-hour', 'counts']],
+                    on='year-month-date-hour', how="left").rename(columns={"counts": activity_id})
+    df_care_date.loc[:, activity_type_ids] = df_care_date.loc[:, activity_type_ids].fillna(0)
+
+    # 日付の重複を削除・year-month-date-hourにソート
+    df_care_y = df_care_date[~df_care_date["year-month-date-hour"].duplicated()].loc[:, ["user_id", "year-month-date-hour", *activity_type_ids]].sort_values("year-month-date-hour")
+
+    # activity_labelの欠損値埋め
+    for activity_id in np.arange(1, 29):
+        if activity_id not in df_care_y.columns:
+            df_care_y.loc[:, activity_id] = 0.0
+
+    return df_care_y.reindex(columns=["user_id", "year-month-date-hour", *np.arange(1, 29)])
