@@ -123,7 +123,7 @@ def create_users_filters():
         15: [1,2,3,4,5,9,10,11,12,13,14,16,18,19,22],
         25: [1,2,3,4,6,7,8,10,13,14,16,17,18,22,23,24,25,26]
     }
-    all_activity_id = np.arange(1, 28)
+    all_activity_id = np.arange(1, 29)
     all_hours = np.arange(0, 24)
 
     filter_default = pd.DataFrame(index=all_activity_id, columns=all_hours).fillna(0)
